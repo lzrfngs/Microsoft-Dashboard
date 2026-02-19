@@ -18,8 +18,8 @@
       --border:        #1c1c21;
       --border-dim:    #161619;
       --text-primary:  #e2e2e6;
-      --text-secondary:#5c5c6e;
-      --text-muted:    #2e2e38;
+      --text-secondary:#8888a0;
+      --text-muted:    #58586e;
       --accent:        #0078D4;
       --accent-bright: #1a8fe0;
       --accent-dim:    rgba(0,120,212,0.12);
@@ -304,11 +304,15 @@
       color: var(--text-primary);
       line-height: 1.45;
       letter-spacing: 0.01em;
+      text-decoration: none;
+      font-family: var(--font);
     }
 
     .feed-headline:hover {
       color: var(--accent-bright);
-      cursor: default;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-color: var(--accent-dim);
     }
 
     .feed-meta {
@@ -1084,15 +1088,22 @@
     return 'JUST NOW';
   }
 
+  // Keywords that must appear in the headline title for an article to count
+  // toward Brand Pulse. Broader terms (Xbox, Teams) stay in the feed but
+  // don't drive the sentiment score unless they're paired with Microsoft.
+  const BRAND_PULSE_TERMS = /microsoft|msft|azure|copilot|satya|nadella|suleyman|openai.*microsoft|microsoft.*openai/i;
+
   async function fetchNews() {
     const feedEl = document.getElementById('feed-list');
 
     try {
+      // qInTitle restricts the keyword to the article headline only,
+      // eliminating articles that merely mention the term in body text.
       const queries = ['Microsoft', 'Xbox', 'Azure'];
       const allArticles = [];
 
       for (const q of queries) {
-        const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(q)}&language=en&sortBy=publishedAt&pageSize=4&apiKey=${NEWSAPI_KEY}`;
+        const url = `https://newsapi.org/v2/everything?qInTitle=${encodeURIComponent(q)}&language=en&sortBy=publishedAt&pageSize=4&apiKey=${NEWSAPI_KEY}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -1113,17 +1124,22 @@
 
       if (unique.length === 0) throw new Error('No articles returned');
 
-      feedEl.innerHTML = unique.map(a => `
+      // Only articles whose title matches a core Microsoft term feed Brand Pulse
+      const brandArticles = unique.filter(a => BRAND_PULSE_TERMS.test(a.title));
+
+      feedEl.innerHTML = unique.map(a => {
+        const scoresBrand = BRAND_PULSE_TERMS.test(a.title);
+        return `
         <li class="feed-item">
-          <span class="feed-headline">${escapeHtml(a.title)}</span>
+          <a class="feed-headline" href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.title)}</a>
           <span class="feed-meta">
             <span class="feed-source">${escapeHtml((a.source?.name || '').toUpperCase())}</span>
-            ${timeAgo(a.publishedAt)}
+            ${timeAgo(a.publishedAt)}${scoresBrand ? '<span style="color:var(--accent);margin-left:4px" title="Counts toward Brand Pulse">●</span>' : ''}
           </span>
-        </li>
-      `).join('');
+        </li>`;
+      }).join('');
 
-      updateBrandHealth(unique);
+      updateBrandHealth(brandArticles);
       updateFooterTime();
 
     } catch (e) {
